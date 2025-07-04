@@ -18,6 +18,10 @@ struct Args {
     /// Whether to match as prefix (default) or suffix
     #[arg(short, long, default_value = "false")]
     suffix: bool,
+    
+    /// Whether to match case-sensitively (default is case-insensitive)
+    #[arg(short, long, default_value = "false")]
+    case_sensitive: bool,
 }
 
 struct WalletInfo {
@@ -62,17 +66,25 @@ fn generate_ethereum_address(secp: &Secp256k1<secp256k1::All>) -> Result<WalletI
     })
 }
 
-fn matches_pattern(address: &str, pattern: &str, is_suffix: bool) -> bool {
-    let address_lower = address.to_lowercase();
-    let pattern_lower = pattern.to_lowercase();
-    
+fn matches_pattern(address: &str, pattern: &str, is_suffix: bool, case_sensitive: bool) -> bool {
     // Remove 0x prefix for matching
-    let address_without_prefix = address_lower.strip_prefix("0x").unwrap_or(&address_lower);
+    let address_without_prefix = address.strip_prefix("0x").unwrap_or(address);
     
-    if is_suffix {
-        address_without_prefix.ends_with(&pattern_lower)
+    if case_sensitive {
+        if is_suffix {
+            address_without_prefix.ends_with(pattern)
+        } else {
+            address_without_prefix.starts_with(pattern)
+        }
     } else {
-        address_without_prefix.starts_with(&pattern_lower)
+        let addr_lower = address_without_prefix.to_lowercase();
+        let pattern_lower = pattern.to_lowercase();
+        
+        if is_suffix {
+            addr_lower.ends_with(&pattern_lower)
+        } else {
+            addr_lower.starts_with(&pattern_lower)
+        }
     }
 }
 
@@ -96,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("🔍 Searching for EVM vanity address...");
     println!("Pattern: {} ({})", args.pattern, if args.suffix { "suffix" } else { "prefix" });
+    println!("Case sensitive: {}", args.case_sensitive);
     println!("Press Ctrl+C to stop\n");
     
     while running.load(Ordering::SeqCst) {
@@ -105,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let wallet = generate_ethereum_address(&secp)?;
         
         // Check if address matches pattern
-        if matches_pattern(&wallet.address, &args.pattern, args.suffix) {
+        if matches_pattern(&wallet.address, &args.pattern, args.suffix, args.case_sensitive) {
             let elapsed = start_time.elapsed();
             
             println!("🎉 Found vanity address after {} attempts in {:.2?}!", attempts, elapsed);

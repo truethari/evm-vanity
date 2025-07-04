@@ -20,14 +20,33 @@ cargo build --release
 
 ## Usage
 
-### Generate address with prefix:
-```bash
-cargo run -- --pattern "dead"
-```
+### Command Line Options
 
-### Generate address with suffix:
+- `-p, --pattern <PATTERN>`: Target pattern to match (prefix or suffix)
+- `-s, --suffix`: Whether to match as suffix (default is prefix)
+- `-c, --case-sensitive`: Whether to match case-sensitively (default is case-insensitive)
+- `-h, --help`: Print help information
+
+### Examples
+
 ```bash
+# Generate address with prefix (case-insensitive by default)
+cargo run -- --pattern "dead"
+
+# Generate address with suffix (case-insensitive by default)
 cargo run -- --pattern "beef" --suffix
+
+# Generate address with case-sensitive prefix
+cargo run -- --pattern "ABC" --case-sensitive
+
+# Generate address with case-sensitive suffix
+cargo run -- --pattern "DEF" --suffix --case-sensitive
+
+# Using release build (faster)
+./target/release/evm-vanity -p dead
+./target/release/evm-vanity -p beef -s
+./target/release/evm-vanity -p ABC -c
+./target/release/evm-vanity -p DEF -s -c
 ```
 
 ### Help:
@@ -40,6 +59,7 @@ cargo run -- --help
 ```
 🔍 Searching for EVM vanity address...
 Pattern: dead (prefix)
+Case sensitive: false
 Press Ctrl+C to stop
 
 ⏳ Attempts: 10000 | Rate: 15234 addr/sec | Elapsed: 656.78ms
