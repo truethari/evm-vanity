@@ -160,8 +160,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
         
-        // Log progress every 10,000 attempts
-        if attempts % 10000 == 0 {
+        // Log progress every 500,000 attempts
+        if attempts % 500000 == 0 {
             let elapsed = start_time.elapsed();
             let rate = attempts as f64 / elapsed.as_secs_f64();
             println!("⏳ Attempts: {} | Rate: {:.0} addr/sec | Elapsed: {:.2?}", 
