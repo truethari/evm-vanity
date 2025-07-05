@@ -88,9 +88,37 @@ fn matches_pattern(address: &str, pattern: &str, is_suffix: bool, case_sensitive
     }
 }
 
+fn validate_pattern(pattern: &str) -> Result<(), String> {
+    let invalid_chars: Vec<char> = pattern
+        .chars()
+        .filter(|c| !c.is_ascii_hexdigit())
+        .collect();
+    
+    if !invalid_chars.is_empty() {
+        let mut error_msg = String::from("❌ Invalid characters found in pattern:\n");
+        
+        for &invalid_char in &invalid_chars {
+            error_msg.push_str(&format!("  • '{}' is not a valid hexadecimal character\n", invalid_char));
+        }
+        
+        error_msg.push_str("\n💡 EVM addresses only use hexadecimal characters: 0-9, a-f, A-F\n");
+        error_msg.push_str("   Valid examples: \"dead\", \"beef\", \"abc123\", \"DEF456\"");
+        
+        return Err(error_msg);
+    }
+    
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    
+    // Validate pattern before starting
+    if let Err(error_msg) = validate_pattern(&args.pattern) {
+        eprintln!("{}", error_msg);
+        std::process::exit(1);
+    }
     
     // Setup signal handling for graceful shutdown
     let running = Arc::new(AtomicBool::new(true));
