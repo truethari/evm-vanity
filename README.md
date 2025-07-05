@@ -22,8 +22,16 @@ cargo build --release
 
 ### Command Line Options
 
+**New Pattern Matching:**
+- `--prefix <PATTERN>`: Match prefix pattern
+- `--suffix <PATTERN>`: Match suffix pattern
+- `--prefix <PATTERN> --suffix <PATTERN>`: Match both prefix AND suffix (dual pattern)
+
+**Legacy Options:**
 - `-p, --pattern <PATTERN>`: Target pattern to match (prefix or suffix)
 - `-s, --suffix`: Whether to match as suffix (default is prefix)
+
+**Other Options:**
 - `-c, --case-sensitive`: Whether to match case-sensitively (default is case-insensitive)
 - `-t, --threads <NUM>`: Number of threads to use (default is number of CPU cores)
 - `-h, --help`: Print help information
@@ -31,27 +39,33 @@ cargo build --release
 ### Examples
 
 ```bash
-# Generate address with prefix (case-insensitive by default)
-cargo run -- --pattern "dead"
+# New dual pattern syntax
+# Generate address with prefix only
+cargo run -- --prefix "dead"
 
-# Generate address with suffix (case-insensitive by default)
-cargo run -- --pattern "beef" --suffix
+# Generate address with suffix only
+cargo run -- --suffix "beef"
 
-# Generate address with case-sensitive prefix
-cargo run -- --pattern "ABC" --case-sensitive
+# Generate address with BOTH prefix AND suffix (dual pattern)
+cargo run -- --prefix "dead" --suffix "beef"
 
-# Generate address with case-sensitive suffix
-cargo run -- --pattern "DEF" --suffix --case-sensitive
+# Case-sensitive dual pattern
+cargo run -- --prefix "ABC" --suffix "DEF" --case-sensitive
 
 # Using release build (faster)
+./target/release/evm-vanity --prefix dead
+./target/release/evm-vanity --suffix beef
+./target/release/evm-vanity --prefix dead --suffix beef
+./target/release/evm-vanity --prefix ABC --suffix DEF --case-sensitive
+
+# Using specific number of threads with dual pattern
+./target/release/evm-vanity --prefix dead --suffix beef -t 16
+
+# Legacy syntax (still supported)
+cargo run -- --pattern "dead"
+cargo run -- --pattern "beef" --suffix
 ./target/release/evm-vanity -p dead
 ./target/release/evm-vanity -p beef -s
-./target/release/evm-vanity -p ABC -c
-./target/release/evm-vanity -p DEF -s -c
-
-# Using specific number of threads
-./target/release/evm-vanity -p dead -t 4
-./target/release/evm-vanity -p beef -s -t 16
 ```
 
 ### Help:
@@ -63,7 +77,7 @@ cargo run -- --help
 
 ```
 🔍 Searching for EVM vanity address...
-Pattern: dead (prefix)
+Pattern: prefix 'dead' AND suffix 'beef'
 Case sensitive: false
 Threads: 8
 Press Ctrl+C to stop
@@ -71,7 +85,7 @@ Press Ctrl+C to stop
 ⏳ Attempts: 10000 | Rate: 15234 addr/sec | Elapsed: 656.78ms
 ⏳ Attempts: 20000 | Rate: 15456 addr/sec | Elapsed: 1.29s
 🎉 Found vanity address after 23456 attempts in 1.52s!
-📍 Address: 0xdead1234567890abcdef1234567890abcdef1234
+📍 Address: 0xdead1234567890abcdef1234567890abcdefbeef
 🔐 Private Key: 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
 📝 Mnemonic: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
 ```

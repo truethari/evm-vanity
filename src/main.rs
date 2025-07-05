@@ -14,11 +14,19 @@ use bip39::Mnemonic;
 struct Args {
     /// Target pattern to match (prefix or suffix)
     #[arg(short, long)]
-    pattern: String,
+    pattern: Option<String>,
     
-    /// Whether to match as prefix (default) or suffix
+    /// Prefix pattern to match
+    #[arg(long)]
+    prefix: Option<String>,
+    
+    /// Suffix pattern to match
+    #[arg(long)]
+    suffix: Option<String>,
+    
+    /// Whether to match as suffix (default is prefix) - deprecated, use --prefix/--suffix instead
     #[arg(short, long, default_value = "false")]
-    suffix: bool,
+    suffix_mode: bool,
     
     /// Whether to match case-sensitively (default is case-insensitive)
     #[arg(short, long, default_value = "false")]
@@ -87,26 +95,43 @@ fn generate_wallet_info(private_key: SecretKey) -> WalletInfo {
     }
 }
 
-fn matches_pattern(address: &str, pattern: &str, is_suffix: bool, case_sensitive: bool) -> bool {
+fn matches_pattern(address: &str, prefix_pattern: Option<&str>, suffix_pattern: Option<&str>, case_sensitive: bool) -> bool {
     // Remove 0x prefix for matching
     let address_without_prefix = address.strip_prefix("0x").unwrap_or(address);
     
-    if case_sensitive {
-        if is_suffix {
-            address_without_prefix.ends_with(pattern)
-        } else {
-            address_without_prefix.starts_with(pattern)
-        }
+    let addr_to_check = if case_sensitive {
+        address_without_prefix.to_string()
     } else {
-        let addr_lower = address_without_prefix.to_lowercase();
-        let pattern_lower = pattern.to_lowercase();
-        
-        if is_suffix {
-            addr_lower.ends_with(&pattern_lower)
+        address_without_prefix.to_lowercase()
+    };
+    
+    // Check prefix pattern
+    if let Some(prefix) = prefix_pattern {
+        let prefix_to_check = if case_sensitive {
+            prefix.to_string()
         } else {
-            addr_lower.starts_with(&pattern_lower)
+            prefix.to_lowercase()
+        };
+        
+        if !addr_to_check.starts_with(&prefix_to_check) {
+            return false;
         }
     }
+    
+    // Check suffix pattern
+    if let Some(suffix) = suffix_pattern {
+        let suffix_to_check = if case_sensitive {
+            suffix.to_string()
+        } else {
+            suffix.to_lowercase()
+        };
+        
+        if !addr_to_check.ends_with(&suffix_to_check) {
+            return false;
+        }
+    }
+    
+    true
 }
 
 fn validate_pattern(pattern: &str) -> Result<(), String> {
@@ -135,10 +160,55 @@ fn validate_pattern(pattern: &str) -> Result<(), String> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     
-    // Validate pattern before starting
-    if let Err(error_msg) = validate_pattern(&args.pattern) {
-        eprintln!("{}", error_msg);
-        std::process::exit(1);
+    // Determine prefix and suffix patterns
+    let (prefix_pattern, suffix_pattern) = match (&args.pattern, &args.prefix, &args.suffix) {
+        // New style: --prefix and/or --suffix
+        (None, Some(prefix), Some(suffix)) => (Some(prefix.as_str()), Some(suffix.as_str())),
+        (None, Some(prefix), None) => (Some(prefix.as_str()), None),
+        (None, None, Some(suffix)) => (None, Some(suffix.as_str())),
+        
+        // Legacy style: -p pattern with -s flag
+        (Some(pattern), None, None) => {
+            if args.suffix_mode {
+                (None, Some(pattern.as_str()))
+            } else {
+                (Some(pattern.as_str()), None)
+            }
+        }
+        
+        // Invalid combinations
+        (Some(_), Some(_), _) | (Some(_), _, Some(_)) => {
+            eprintln!("❌ Cannot use -p/--pattern with --prefix/--suffix. Use either:");
+            eprintln!("  • Legacy: -p <pattern> [-s]");
+            eprintln!("  • New: --prefix <pattern> and/or --suffix <pattern>");
+            std::process::exit(1);
+        }
+        
+        (None, None, None) => {
+            eprintln!("❌ Must specify at least one pattern:");
+            eprintln!("  • --prefix <pattern>: Match prefix");
+            eprintln!("  • --suffix <pattern>: Match suffix");
+            eprintln!("  • --prefix <pattern> --suffix <pattern>: Match both");
+            eprintln!("  • -p <pattern>: Legacy format");
+            std::process::exit(1);
+        }
+    };
+    
+    // Validate patterns
+    if let Some(prefix) = prefix_pattern {
+        if let Err(error_msg) = validate_pattern(prefix) {
+            eprintln!("❌ Invalid prefix pattern:");
+            eprintln!("{}", error_msg);
+            std::process::exit(1);
+        }
+    }
+    
+    if let Some(suffix) = suffix_pattern {
+        if let Err(error_msg) = validate_pattern(suffix) {
+            eprintln!("❌ Invalid suffix pattern:");
+            eprintln!("{}", error_msg);
+            std::process::exit(1);
+        }
     }
     
     // Determine number of threads
@@ -158,14 +228,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_time = Instant::now();
     
     println!("🔍 Searching for EVM vanity address...");
-    println!("Pattern: {} ({})", args.pattern, if args.suffix { "suffix" } else { "prefix" });
+    match (prefix_pattern, suffix_pattern) {
+        (Some(prefix), Some(suffix)) => println!("Pattern: prefix '{}' AND suffix '{}'", prefix, suffix),
+        (Some(prefix), None) => println!("Pattern: prefix '{}'", prefix),
+        (None, Some(suffix)) => println!("Pattern: suffix '{}'", suffix),
+        (None, None) => unreachable!(),
+    }
     println!("Case sensitive: {}", args.case_sensitive);
     println!("Threads: {}", num_threads);
     println!("Press Ctrl+C to stop\n");
     
     // Shared data between threads
-    let pattern = Arc::new(args.pattern.clone());
-    let suffix = args.suffix;
+    let prefix_pattern_arc = Arc::new(prefix_pattern.map(|s| s.to_string()));
+    let suffix_pattern_arc = Arc::new(suffix_pattern.map(|s| s.to_string()));
     let case_sensitive = args.case_sensitive;
     let found = Arc::new(AtomicBool::new(false));
     let result = Arc::new(std::sync::Mutex::new(None::<WalletInfo>));
@@ -175,7 +250,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut handles = Vec::new();
     for _thread_id in 0..num_threads {
         let running = running.clone();
-        let pattern = pattern.clone();
+        let prefix_pattern_arc = prefix_pattern_arc.clone();
+        let suffix_pattern_arc = suffix_pattern_arc.clone();
         let found = found.clone();
         let result = result.clone();
         let total_attempts = total_attempts.clone();
@@ -192,7 +268,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (address, private_key) = generate_address_fast(&secp);
                 
                 // Check if address matches pattern
-                if matches_pattern(&address, &pattern, suffix, case_sensitive) {
+                let prefix_ref = prefix_pattern_arc.as_ref().as_ref().map(|s| s.as_str());
+                let suffix_ref = suffix_pattern_arc.as_ref().as_ref().map(|s| s.as_str());
+                if matches_pattern(&address, prefix_ref, suffix_ref, case_sensitive) {
                     // Found match - create full wallet info
                     let wallet = generate_wallet_info(private_key);
                     
